@@ -308,7 +308,7 @@ const sortOptions = [
 ];
 
 export default function UserManagementPage() {
-  const [activeTab, setActiveTab] = useState<'customers' | 'vendors' | 'appeals'>('customers');
+  const [activeTab, setActiveTab] = useState<'customers' | 'vendors' | 'appeals' | 'partner-requests'>('customers');
   const [selectedRequest, setSelectedRequest] = useState<Request | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [selectedVendor, setSelectedVendor] = useState<Vendor | null>(null);
@@ -488,23 +488,41 @@ export default function UserManagementPage() {
     fetcher: () => api.get('/users/appeals').then(r => r.data),
   });
 
+  // ─── 6. Partner Requests Query ────────────────────────────────────────────────
+  const {
+    data: partnerRequestsData,
+    isLoading: isPartnerRequestsLoading,
+    refetch: refetchPartnerRequests
+  } = useAdminQuery<{ success: boolean; data: any[] }>({
+    queryKey: `users:list:tab:partner-requests:page:${page}:search:${searchQuery}:limit:${limit}`,
+    fetcher: () => api.get('/users/partner-requests').then(r => r.data),
+  });
+
+  const partnerRequests = partnerRequestsData?.data || [];
+
   const items = activeTab === 'customers'
     ? (customersData?.users || [])
     : activeTab === 'vendors'
       ? (vendorsData?.vendors || [])
-      : (appealsData?.appeals || []);
+      : activeTab === 'appeals'
+        ? (appealsData?.appeals || [])
+        : partnerRequests;
 
   const isTableLoading = activeTab === 'customers'
     ? isCustomersLoading
     : activeTab === 'vendors'
       ? isVendorsLoading
-      : isAppealsLoading;
+      : activeTab === 'appeals'
+        ? isAppealsLoading
+        : isPartnerRequestsLoading;
 
   const pagination = activeTab === 'customers'
     ? (customersData?.pagination || { total: 0, pages: 1 })
     : activeTab === 'vendors'
       ? (vendorsData?.pagination || { total: 0, pages: 1 })
-      : { total: (appealsData?.appeals || []).length, pages: 1 };
+      : activeTab === 'appeals'
+        ? { total: (appealsData?.appeals || []).length, pages: 1 }
+        : { total: partnerRequests.length, pages: 1 };
 
   const handleUpdateAppealStatus = async (appealId: number, status: 'approved' | 'rejected') => {
     toast.success(`Updating appeal status to ${status}...`);
@@ -521,6 +539,19 @@ export default function UserManagementPage() {
       }
     } catch (err) {
       toast.error('Failed to update appeal status');
+    }
+  };
+
+  const handleUpdatePartnerRequestStatus = async (requestId: number, status: 'approved' | 'rejected') => {
+    toast.success(`Updating partner request to ${status}...`);
+    try {
+      const res = await api.patch(`/users/partner-requests/${requestId}/status`, { status });
+      if (res.data.success) {
+        toast.success(`Partner request ${status} successfully!`);
+        refetchPartnerRequests();
+      }
+    } catch (err) {
+      toast.error('Failed to update partner request status');
     }
   };
 
@@ -943,6 +974,12 @@ export default function UserManagementPage() {
             >
               Appeals{activeTab === 'appeals' ? ` (${appealsCount})` : ''}
             </button>
+            <button
+              onClick={() => { setActiveTab('partner-requests'); setPage(1); }}
+              className={`px-8 py-2.5 rounded-[16px] text-xs font-bold transition-all ${activeTab === 'partner-requests' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+            >
+              Partner Requests{activeTab === 'partner-requests' ? ` (${partnerRequests.length})` : ''}
+            </button>
           </div>
 
           <div className="flex items-center gap-3 flex-1 max-w-md">
@@ -1006,14 +1043,14 @@ export default function UserManagementPage() {
             <thead>
               <tr className="bg-gray-50 border-b border-gray-100">
                 <th className="text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider px-4 py-3">
-                  {activeTab === 'customers' ? 'Customer Identity' : activeTab === 'vendors' ? 'Business & Owner' : 'Appeal Identity'}
+                  {activeTab === 'customers' ? 'Customer Identity' : activeTab === 'vendors' ? 'Business & Owner' : activeTab === 'appeals' ? 'Appeal Identity' : 'Partner Candidate'}
                 </th>
                 <th className="text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider px-4 py-3">
-                  {activeTab === 'customers' ? 'Last Active' : activeTab === 'vendors' ? 'Inventory & Activity' : 'Reason / Details'}
+                  {activeTab === 'customers' ? 'Last Active' : activeTab === 'vendors' ? 'Inventory & Activity' : activeTab === 'appeals' ? 'Reason / Details' : 'Contact Details'}
                 </th>
                 <th className="text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider px-4 py-3">Status</th>
                 <th className="text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider px-4 py-3">
-                  {activeTab === 'customers' ? 'Member Since' : activeTab === 'vendors' ? 'Store Metrics' : 'Submitted At'}
+                  {activeTab === 'customers' ? 'Member Since' : activeTab === 'vendors' ? 'Store Metrics' : activeTab === 'appeals' ? 'Submitted At' : 'Applied At'}
                 </th>
                 <th className="text-left text-[10px] font-bold text-gray-400 uppercase tracking-wider px-4 py-3">Actions</th>
               </tr>
@@ -1231,7 +1268,7 @@ export default function UserManagementPage() {
                         </td>
                       </tr>
                     );
-                  } else {
+                  } else if (activeTab === 'appeals') {
                     const appeal = item as Appeal;
                     return (
                       <tr
@@ -1305,6 +1342,66 @@ export default function UserManagementPage() {
                                   }}
                                   className="w-7 h-7 flex items-center justify-center rounded-lg bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white transition-all"
                                   title="Reject Appeal"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  } else {
+                    const partner = item as any;
+                    return (
+                      <tr
+                        key={partner.id}
+                        className="group hover:bg-gray-50/60 transition-colors"
+                      >
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-[0.5rem] bg-rose-50 flex items-center justify-center text-rose-600 font-extrabold text-[10px] border border-rose-100 shadow-sm overflow-hidden shrink-0">
+                              {partner.name.charAt(0)}
+                            </div>
+                            <div>
+                              <p className="text-xs font-bold text-gray-900 leading-tight">{partner.name}</p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-xs font-semibold text-gray-700">
+                          <div>
+                            <p>{partner.email}</p>
+                            {partner.phone && <p className="text-[10px] text-gray-400 mt-0.5">{partner.phone}</p>}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-extrabold border ${partner.status === 'pending'
+                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            : partner.status === 'approved'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : 'bg-rose-50 text-rose-700 border-rose-200'
+                            }`}>
+                            {partner.status.toUpperCase()}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs font-semibold text-gray-500">
+                          {new Date(partner.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            {partner.status === 'pending' && (
+                              <>
+                                <button
+                                  onClick={() => handleUpdatePartnerRequestStatus(partner.id, 'approved')}
+                                  className="w-7 h-7 flex items-center justify-center rounded-lg bg-emerald-50 hover:bg-emerald-500 text-emerald-600 hover:text-white transition-all"
+                                  title="Approve Partner"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleUpdatePartnerRequestStatus(partner.id, 'rejected')}
+                                  className="w-7 h-7 flex items-center justify-center rounded-lg bg-rose-50 hover:bg-rose-500 text-rose-600 hover:text-white transition-all"
+                                  title="Reject Partner"
                                 >
                                   <X className="w-3.5 h-3.5" />
                                 </button>
@@ -1900,8 +1997,8 @@ export default function UserManagementPage() {
                             key={tab.id}
                             onClick={() => setUserModalTab(tab.id as DetailTab)}
                             className={`flex items-center gap-2 px-4 py-2.5 rounded-full font-bold text-xs transition-all shrink-0 active:scale-95 ${isActive
-                                ? 'bg-rose-500 text-white shadow-md shadow-rose-100'
-                                : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                              ? 'bg-rose-500 text-white shadow-md shadow-rose-100'
+                              : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
                               }`}
                           >
                             <Icon className="w-3.5 h-3.5" />
@@ -2099,10 +2196,10 @@ export default function UserManagementPage() {
                                       ₦{Number(order.total || 0).toLocaleString()}
                                     </span>
                                     <span className={`text-[9px] font-bold px-2 py-0.5 rounded inline-block capitalize ${order.status === 'completed' || order.status === 'delivered' || order.status === 'released'
-                                        ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
-                                        : order.status === 'cancelled' || order.status === 'disputed'
-                                          ? 'bg-rose-50 text-rose-600 border border-rose-100'
-                                          : 'bg-amber-50 text-amber-600 border border-amber-100'
+                                      ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                                      : order.status === 'cancelled' || order.status === 'disputed'
+                                        ? 'bg-rose-50 text-rose-600 border border-rose-100'
+                                        : 'bg-amber-50 text-amber-600 border border-amber-100'
                                       }`}>
                                       {order.status || 'Pending'}
                                     </span>
@@ -2132,8 +2229,8 @@ export default function UserManagementPage() {
                               key={subTab.id}
                               onClick={() => setSocialSubTab(subTab.id as any)}
                               className={`flex-1 text-center py-1.5 rounded-md font-bold text-[11px] transition-all select-none active:scale-[0.98] ${socialSubTab === subTab.id
-                                  ? 'bg-white text-gray-900 shadow-sm'
-                                  : 'text-gray-500 hover:text-gray-800'
+                                ? 'bg-white text-gray-900 shadow-sm'
+                                : 'text-gray-500 hover:text-gray-800'
                                 }`}
                             >
                               {subTab.label}
@@ -2326,8 +2423,8 @@ export default function UserManagementPage() {
                             key={tab.id}
                             onClick={() => setVendorModalTab(tab.id as DetailTab)}
                             className={`flex items-center gap-2 px-4 py-2.5 rounded-full font-bold text-xs transition-all shrink-0 active:scale-95 ${isActive
-                                ? 'bg-rose-500 text-white shadow-md shadow-rose-100'
-                                : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
+                              ? 'bg-rose-500 text-white shadow-md shadow-rose-100'
+                              : 'text-gray-500 hover:text-gray-900 hover:bg-gray-50'
                               }`}
                           >
                             <Icon className="w-3.5 h-3.5" />
@@ -2570,10 +2667,10 @@ export default function UserManagementPage() {
                                       ₦{Number(order.total || 0).toLocaleString()}
                                     </span>
                                     <span className={`text-[9px] font-bold px-2 py-0.5 rounded inline-block capitalize ${order.status === 'completed' || order.status === 'delivered' || order.status === 'released'
-                                        ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
-                                        : order.status === 'cancelled' || order.status === 'disputed'
-                                          ? 'bg-rose-50 text-rose-600 border border-rose-100'
-                                          : 'bg-amber-50 text-amber-600 border border-amber-100'
+                                      ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                                      : order.status === 'cancelled' || order.status === 'disputed'
+                                        ? 'bg-rose-50 text-rose-600 border border-rose-100'
+                                        : 'bg-amber-50 text-amber-600 border border-amber-100'
                                       }`}>
                                       {order.status || 'Pending'}
                                     </span>
@@ -2603,8 +2700,8 @@ export default function UserManagementPage() {
                               key={subTab.id}
                               onClick={() => setSocialSubTab(subTab.id as any)}
                               className={`flex-1 text-center py-1.5 rounded-md font-bold text-[11px] transition-all select-none active:scale-[0.98] ${socialSubTab === subTab.id
-                                  ? 'bg-white text-gray-900 shadow-sm'
-                                  : 'text-gray-500 hover:text-gray-800'
+                                ? 'bg-white text-gray-900 shadow-sm'
+                                : 'text-gray-500 hover:text-gray-800'
                                 }`}
                             >
                               {subTab.label}
@@ -2759,8 +2856,8 @@ export default function UserManagementPage() {
                                           Stock: {product.stock}
                                         </span>
                                         <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded capitalize ${product.status === 'active'
-                                            ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
-                                            : 'bg-gray-50 text-gray-600 border border-gray-100'
+                                          ? 'bg-emerald-50 text-emerald-600 border border-emerald-100'
+                                          : 'bg-gray-50 text-gray-600 border border-gray-100'
                                           }`}>
                                           {product.status || 'Active'}
                                         </span>
